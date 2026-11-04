@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SwitchOps | Autonomous SRE Teammate (WeMakeDevs Flip the Switch)</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Top Navigation Bar -->
+        <header class="top-nav">
+            <div class="nav-brand">
+                <div class="logo-icon">⚡</div>
+                <div class="brand-text">
+                    <h1>SwitchOps</h1>
+                    <span class="sub-badge">Autonomous SRE Teammate</span>
+                </div>
+            </div>
+
+            <div class="nav-badges">
+                <div class="badge badge-pulse">
+                    <span class="dot green"></span> Switch Core Bridge: Connected
+                </div>
+                <div class="badge badge-accent">
+                    🏆 Track: Best Business Workflow
+                </div>
+                <div class="badge badge-wispr" onclick="openWisprModal()">
+                    🎙️ Wispr Flow Voice Ready
+                </div>
+            </div>
+
+            <div class="nav-actions">
+                <button class="btn btn-danger" id="btnTriggerIncident" onclick="triggerIncident()">
+                    🚨 Trigger Production 500
+                </button>
+                <button class="btn btn-secondary" onclick="triggerVoiceApprove()">
+                    🎙️ Voice: "Approve Fix"
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Dashboard Split Screen -->
+        <main class="main-content">
+            <!-- Left: Switch Collaborative Chat Room -->
+            <section class="chat-section">
+                <div class="chat-header">
+                    <div class="room-info">
+                        <span class="room-hash">#</span>
+                        <span class="room-name" id="roomTitle">incident-standby</span>
+                        <span class="room-status" id="roomStatusBadge">STANDBY</span>
+                    </div>
+                    <div class="agent-roster">
+                        <span class="agent-chip">🤖 Triage</span>
+                        <span class="agent-chip">🛠️ Remediation</span>
+                        <span class="agent-chip">🚀 GitOps</span>
+                    </div>
+                </div>
+
+                <div class="chat-messages" id="chatMessages">
+                    <div class="msg system">
+                        <div class="msg-avatar">⚡</div>
+                        <div class="msg-body">
+                            <div class="msg-meta">SwitchOps System • Standby</div>
+                            <div class="msg-text">
+                                System initialized and listening for APM alerts. Click <strong>Trigger Production 500</strong> above to simulate a live incident or speak into Wispr Flow.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Floating Approval Banner (Shows when fix is ready) -->
+                <div class="approval-banner" id="approvalBanner" style="display: none;">
+                    <div class="banner-content">
+                        <span class="banner-icon">⚠️</span>
+                        <div class="banner-text">
+                            <strong>Human-in-the-Loop Approval Required:</strong>
+                            <span>Regression test verified. Approve committing patch and opening GitHub PR?</span>
+                        </div>
+                    </div>
+                    <div class="banner-buttons">
+                        <button class="btn btn-success" onclick="approveIncident()">✅ Approve & Open PR</button>
+                        <button class="btn btn-secondary-danger" onclick="rejectIncident()">❌ Reject</button>
+                    </div>
+                </div>
+
+                <!-- Chat Input Controls -->
+                <div class="chat-input-bar">
+                    <button class="btn-voice" onclick="promptVoiceCommand()" title="Speak via Wispr Flow">🎙️</button>
+                    <input type="text" id="chatInput" placeholder="Message SwitchOps room or type 'approve'..." onkeydown="handleInputKey(event)">
+                    <button class="btn btn-primary" onclick="sendMessage()">Send</button>
+                </div>
+            </section>
+
+            <!-- Right: SRE Mission Control & Telemetry -->
+            <section class="telemetry-section">
+                <!-- Incident Overview Card -->
+                <div class="card incident-card">
+                    <div class="card-header">
+                        <h3>🚨 Incident Context & Root Cause</h3>
+                        <span class="badge badge-severity" id="incidentSeverity">NORMAL</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="info-row">
+                            <span class="label">Incident ID:</span>
+                            <span class="val mono" id="infoIncId">None active</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Service:</span>
+                            <span class="val" id="infoService">payments-service</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Root Cause:</span>
+                            <span class="val highlight" id="infoRootCause">Awaiting alert trigger...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Code Diff Inspector Card -->
+                <div class="card diff-card">
+                    <div class="card-header">
+                        <h3>🔍 Surgical Patch Inspector</h3>
+                        <span class="file-name mono" id="diffTargetFile">payments_service/app.py</span>
+                    </div>
+                    <div class="diff-viewer mono" id="diffViewer">
+<span class="comment">// No active code diff yet.</span>
+<span class="comment">// When an incident is triggered, SwitchOps automatically</span>
+<span class="comment">// synthesizes and displays the unified diff here.</span>
+                    </div>
+                </div>
+
+                <!-- Test Verification Card -->
+                <div class="card test-card">
+                    <div class="card-header">
+                        <h3>🧪 Automated Regression Suite</h3>
+                        <span class="badge badge-success" id="testBadge">AWAITING RUN</span>
+                    </div>
+                    <pre class="terminal-output mono" id="terminalOutput">
+[SwitchOps Test Runner] Idle. Ready to execute unit & regression test suites.
+                    </pre>
+                </div>
+
+                <!-- Switch ROI Metrics Card -->
+                <div class="card roi-card">
+                    <div class="card-header">
+                        <h3>📊 Switch ROI & MTTR Telemetry</h3>
+                        <span class="badge badge-accent">SandboxAQ Switch ROI</span>
+                    </div>
+                    <div class="roi-grid">
+                        <div class="roi-item">
+                            <span class="roi-label">MTTR Reduction</span>
+                            <span class="roi-val green" id="roiMttr">97.2%</span>
+                            <span class="roi-sub">45m ➔ 1.2m</span>
+                        </div>
+                        <div class="roi-item">
+                            <span class="roi-label">Value Saved</span>
+                            <span class="roi-val green" id="roiSavings">$3,650.00</span>
+                            <span class="roi-sub">Downtime + SRE Time</span>
+                        </div>
+                        <div class="roi-item">
+                            <span class="roi-label">LLM Cost</span>
+                            <span class="roi-val" id="roiCost">$0.006</span>
+                            <span class="roi-sub">2,480 Tokens</span>
+                        </div>
+                        <div class="roi-item">
+                            <span class="roi-label">ROI Multiplier</span>
+                            <span class="roi-val highlight" id="roiMultiplier">485x</span>
+                            <span class="roi-sub">Value / Cost</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Wispr Flow Modal -->
+    <div class="modal-backdrop" id="wisprModal" style="display: none;" onclick="closeWisprModal(event)">
+        <div class="modal-card" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2>🎙️ Wispr Flow Integration Scorecard</h2>
+                <button class="btn-close" onclick="closeWisprModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="wisprScorecardContent">
+                <p>Loading Wispr Flow voice metrics...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
