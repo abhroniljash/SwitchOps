@@ -22,8 +22,8 @@ class SwitchOpsOrchestrator:
         self.workspace_root = workspace_root
         self.client = SwitchClient(is_simulation=is_simulation)
         self.incident_engine = IncidentEngine(workspace_root=workspace_root)
-        self.remediation_engine = RemediationEngine(workspace_root=workspace_root)
-        self.git_commander = GitCommander(workspace_root=workspace_root)
+        self.remediation_engine = RemediationEngine(workspace_root=workspace_root, is_simulation=is_simulation)
+        self.git_commander = GitCommander(workspace_root=workspace_root, is_simulation=is_simulation)
         self.roi_tracker = ROITelemetryTracker()
         self.wispr_voice = WisprVoiceAdapter()
 

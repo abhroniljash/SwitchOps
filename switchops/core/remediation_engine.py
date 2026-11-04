@@ -45,8 +45,9 @@ class RemediationProposal:
 class RemediationEngine:
     """Produces verified, test-backed fixes for incidents."""
 
-    def __init__(self, workspace_root: Optional[str] = None):
+    def __init__(self, workspace_root: Optional[str] = None, is_simulation: bool = True):
         self.workspace_root = workspace_root or os.getcwd()
+        self.is_simulation = is_simulation
 
     def generate_fix(self, incident: Incident) -> RemediationProposal:
         """
@@ -142,6 +143,8 @@ class RemediationEngine:
 
     def apply_patch(self, proposal: RemediationProposal) -> bool:
         """Applies the verified patch to the local codebase upon human approval."""
+        if self.is_simulation:
+            return True
         full_path = os.path.join(self.workspace_root, proposal.target_file)
         try:
             with open(full_path, "w", encoding="utf-8") as f:

@@ -38,11 +38,14 @@ class PullRequest:
 class GitCommander:
     """Manages Git version control automation and PR creation for SRE incidents."""
 
-    def __init__(self, workspace_root: Optional[str] = None, repo_name: str = "org/payments-service"):
+    def __init__(self, workspace_root: Optional[str] = None, repo_name: str = "org/payments-service", is_simulation: bool = True):
         self.workspace_root = workspace_root or os.getcwd()
         self.repo_name = repo_name
+        self.is_simulation = is_simulation
 
     def _run_git(self, args: list) -> str:
+        if self.is_simulation:
+            return "simulated-git-ok"
         try:
             res = subprocess.run(
                 ["git"] + args,
@@ -57,8 +60,9 @@ class GitCommander:
 
     def prepare_branch(self, incident_id: str) -> str:
         branch_name = f"fix/{incident_id.lower()}-currency-casing"
-        # Attempt real git checkout if inside repository
-        self._run_git(["checkout", "-b", branch_name])
+        # Only execute branch creation if not in simulation mode
+        if not self.is_simulation:
+            self._run_git(["checkout", "-b", branch_name])
         return branch_name
 
     def commit_remediation(self, branch_name: str, proposal: RemediationProposal) -> str:
