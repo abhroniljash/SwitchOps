@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 SwitchOps Interactive Terminal Demonstration.
-Run: python scripts/run_demo.py
+Follows the 10-step hackathon workflow specified in Section 18 of the roadmap.
+Usage: python scripts/run_demo.py
 """
 
 import os
@@ -20,7 +21,6 @@ if sys.platform == "win32":
         pass
 
 from switchops.switch_bridge.room_manager import SwitchOpsOrchestrator
-from switchops.switch_bridge.wispr_voice import WisprVoiceAdapter
 
 # Terminal ANSI colors
 GREEN = "\033[92m"
@@ -37,70 +37,71 @@ def main():
     print(f"\n{BOLD}{CYAN}========================================================================{RESET}")
     print(f"{BOLD}{PURPLE} ⚡ SwitchOps: Autonomous SRE Teammate & Incident Auto-Remediation{RESET}")
     print(f"{BOLD}    Powered by Switch (SandboxAQ) | WeMakeDevs Flip the Switch{RESET}")
+    print(f"{BOLD}    [Note: All demo metrics & incidents are labeled as simulated]{RESET}")
     print(f"{BOLD}{CYAN}========================================================================{RESET}\n")
 
-    orchestrator = SwitchOpsOrchestrator(workspace_root=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")), is_simulation=True)
+    workspace = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    orchestrator = SwitchOpsOrchestrator(workspace_root=workspace)
 
-    print(f"{BOLD}[STEP 1]{RESET} {YELLOW}🚨 Simulating Production Incident Ingestion...{RESET}")
+    # Step 1 & 2: Introduce problem & Switch connection
+    print(f"{BOLD}[STEP 1 & 2]{RESET} {BLUE}Initializing Switch Core bridge and listening for alerts...{RESET}")
+    health = orchestrator.switch_adapter.check_health()
+    print(f"   {GREEN}✓ Switch Bridge Status:{RESET} {health['status']} ({health['gateway_url']})")
     time.sleep(1)
-    session = orchestrator.start_incident_workflow()
-    inc = session["incident"]
-    prop = session["proposal"]
 
-    print(f"   {GREEN}✓ Incident Ingested:{RESET} {BOLD}{inc.id}{RESET} in {BOLD}{inc.service}{RESET}")
-    print(f"   {GREEN}✓ Severity:{RESET} {RED}{inc.severity.value}{RESET}")
-    print(f"   {GREEN}✓ Switch Room Created:{RESET} {CYAN}#{session['room_name']}{RESET}")
-    print(f"   {GREEN}✓ Participating Agents:{RESET} SwitchOps-Triage, SwitchOps-Remediation, SwitchOps-GitOps\n")
-
-    print(f"{BOLD}[STEP 2]{RESET} {BLUE}🔍 Autonomous Root Cause Analysis (RCA)...{RESET}")
+    # Step 3 & 4: Trigger controlled 500 & incident ingestion
+    print(f"\n{BOLD}[STEP 3 & 4]{RESET} {YELLOW}🚨 Controlled HTTP 500 Ingested (payments-service)...{RESET}")
+    incident = orchestrator.create_or_ingest_incident()
+    print(f"   {GREEN}✓ Incident ID:{RESET} {BOLD}{incident.id}{RESET}")
+    print(f"   {GREEN}✓ Switch Room Bound:{RESET} {CYAN}#incident-{incident.id.lower()}{RESET}")
+    print(f"   {GREEN}✓ State:{RESET} {incident.status.value}")
     time.sleep(1.2)
-    print(f"   {GREEN}✓ Stack Trace Parsed:{RESET} {inc.affected_file} (line {inc.line_number})")
-    print(f"   {GREEN}✓ RCA Diagnosis:{RESET} {inc.root_cause_summary}\n")
 
-    print(f"{BOLD}[STEP 3]{RESET} {PURPLE}🛠️ Surgical Patch Synthesis & Automated Test Verification...{RESET}")
+    # Step 5: Triage Agent evidence-based RCA
+    print(f"\n{BOLD}[STEP 5]{RESET} {BLUE}🔍 Triage Agent: Evidence-Based Root-Cause Analysis...{RESET}")
+    incident, task = orchestrator.run_triage(incident.id)
+    print(f"   {GREEN}✓ Evidence Item:{RESET} {incident.evidence_list[0].file_path} (line {incident.evidence_list[0].line_reference})")
+    print(f"   {GREEN}✓ Hypothesis ({incident.confidence_level} Confidence):{RESET}\n     {incident.likely_root_cause}")
     time.sleep(1.2)
-    print(f"   {GREEN}✓ Patch Generated for:{RESET} {prop.target_file}")
-    print(f"   {GREEN}✓ Regression Test Created:{RESET} {prop.regression_test_name}")
-    print(f"   {GREEN}✓ Verification Result:{RESET} {BOLD}{GREEN}5 PASSED, 0 FAILED (0.12s){RESET}")
-    print(f"   {GREEN}✓ Risk Assessment:{RESET} {prop.risk_assessment}\n")
 
-    print(f"{BOLD}[STEP 4]{RESET} {YELLOW}📋 Human-in-the-Loop Collaboration in Slack / Discord...{RESET}")
-    print(f"   {CYAN}--- Live Switch Room Thread #{session['room_name']} ---{RESET}")
-    for msg in orchestrator.client.get_room_messages(session["room_id"]):
-        role_color = CYAN if msg["role"] == "agent" else YELLOW
-        print(f"   {role_color}[{msg['sender']}]:{RESET} {msg['text'][:110]}...")
-    print(f"   {CYAN}-------------------------------------------------------{RESET}\n")
+    # Step 6: Remediation Agent proposed diff
+    session = orchestrator.sessions[incident.id]
+    patch = session["patch"]
+    print(f"\n{BOLD}[STEP 6]{RESET} {PURPLE}🛠️ Remediation Agent: Synthesizing Safe Scoped Patch...{RESET}")
+    print(f"   {GREEN}✓ Target File:{RESET} {patch.files_changed[0]}")
+    print(f"   {GREEN}✓ Risk Assessment:{RESET} {patch.risk_notes}")
+    print(f"   {GREEN}✓ Current State:{RESET} {BOLD}{YELLOW}{incident.status.value}{RESET}")
+    time.sleep(1.2)
 
-    print(f"{BOLD}[STEP 5]{RESET} {PURPLE}🎙️ Wispr Flow Voice Input Received from On-Call Engineer...{RESET}")
-    voice_transcript = "Looks good SwitchOps, approve the hotfix and deploy to production."
-    print(f"   {BOLD}Spoken into Wispr Flow:{RESET} \"{voice_transcript}\"")
+    # Step 7: Human approval of patch & real isolated test execution
+    print(f"\n{BOLD}[STEP 7]{RESET} {YELLOW}📋 Human-in-the-Loop Approval (Step 1 of 2: Authorize Patch){RESET}")
+    print(f"   {CYAN}Operator Reviewer:{RESET} \"Patch looks safe and scoped. Approved for testing.\"")
+    test_run = orchestrator.approve_patch(incident.id, reviewer="OnCallEngineer")
+    print(f"   {GREEN}✓ Test Runner Command:{RESET} `{test_run.command_profile}`")
+    print(f"   {GREEN}✓ Exit Code:{RESET} {test_run.exit_code} ({test_run.duration_ms}ms)")
+    print(f"   {GREEN}✓ Test Run Result:{RESET} {BOLD}{GREEN}{test_run.status} ✅{RESET}")
+    print(f"   {GREEN}✓ Transitioned to State:{RESET} {BOLD}{YELLOW}{incident.status.value}{RESET}")
+    time.sleep(1.2)
+
+    # Step 8 & 9: Human approval of PR & GitOps Agent dispatch
+    print(f"\n{BOLD}[STEP 8 & 9]{RESET} {GREEN}🚀 Human-in-the-Loop Approval (Step 2 of 2: Create GitHub PR){RESET}")
+    print(f"   {CYAN}Operator Reviewer:{RESET} \"Tests passed. Authorize opening Pull Request on GitHub.\"")
+    pr = orchestrator.approve_pr_creation(incident.id, reviewer="OnCallEngineer")
+    print(f"   {GREEN}✓ Git Branch:{RESET} {pr.branch} (Base: {pr.base_branch})")
+    print(f"   {GREEN}✓ Pull Request Created:{RESET} {BOLD}{CYAN}{pr.url}{RESET}")
+    print(f"   {GREEN}✓ Current State:{RESET} {BOLD}{GREEN}{incident.status.value}{RESET}")
     time.sleep(1)
 
-    result = orchestrator.handle_voice_command(session["room_id"], voice_transcript)
-    pr = result["pull_request"]
-    roi = result["roi"]
-    print(f"   {GREEN}✓ Intent Recognized:{RESET} APPROVE_REMEDIATION (Confidence: 98%)\n")
+    # Step 10: Safety Controls & Operational Analytics
+    print(f"\n{BOLD}[STEP 10]{RESET} {YELLOW}🛡️ Safety Controls & Operational Analytics (Simulated Demo Data):{RESET}")
+    summary = orchestrator.telemetry.get_summary()
+    print(f"   {GREEN}✓ Time to Triage:{RESET} {summary['average_time_to_triage_seconds']}s")
+    print(f"   {GREEN}✓ Time to PR:{RESET} {summary['average_time_to_pr_seconds']}s")
+    print(f"   {GREEN}✓ Test Pass Rate:{RESET} {summary['test_pass_rate']}")
+    print(f"   {GREEN}✓ Safety Rules:{RESET} No automatic merge, no direct commits to main, human approval required.")
 
-    print(f"{BOLD}[STEP 6]{RESET} {GREEN}🚀 Git Operations & GitHub PR Dispatch...{RESET}")
-    time.sleep(1)
-    print(f"   {GREEN}✓ Git Branch Created:{RESET} {pr['branch_name']}")
-    print(f"   {GREEN}✓ Conventional Commit Applied:{RESET} fix(payments): resolve KeyError on lowercase currency")
-    print(f"   {GREEN}✓ Pull Request Opened:{RESET} {BOLD}{CYAN}{pr['url']}{RESET}")
-    print(f"   {GREEN}✓ Post-Mortem Generated & Attached to PR description{RESET}\n")
-
-    print(f"{BOLD}[STEP 7]{RESET} {YELLOW}📊 SandboxAQ Switch ROI & Telemetry Summary...{RESET}")
-    print(f"   {GREEN}✓ Baseline Manual MTTR:{RESET} {roi['baseline_manual_mttr_minutes']} minutes")
-    print(f"   {GREEN}✓ SwitchOps Resolution Time:{RESET} {BOLD}{roi['actual_resolution_seconds']} seconds{RESET}")
-    print(f"   {GREEN}✓ MTTR Reduction:{RESET} {BOLD}{GREEN}{roi['mttr_reduction_percent']}%{RESET}")
-    print(f"   {GREEN}✓ Engineering & Downtime Savings:{RESET} {BOLD}${roi['total_value_delivered_usd']:,.2f}{RESET}")
-    print(f"   {GREEN}✓ LLM Inference Cost:{RESET} ${roi['llm_cost_usd']}")
-    print(f"   {GREEN}✓ Switch ROI Multiplier:{RESET} {BOLD}{PURPLE}{roi['roi_multiplier']}x{RESET}\n")
-
-    wispr_card = orchestrator.wispr_voice.generate_wispr_scorecard()
-    print(f"{BOLD}[BONUS]{RESET} {PURPLE}🎙️ Wispr Flow Scorecard Ready:{RESET} {wispr_card['total_voice_commands_processed']} prompts recorded, {wispr_card['average_intent_accuracy']} accuracy.\n")
-
-    print(f"{BOLD}{GREEN}========================================================================{RESET}")
-    print(f"{BOLD}{GREEN} ✨ Demonstration Finished Successfully! Ready for Video & Judging!{RESET}")
+    print(f"\n{BOLD}{GREEN}========================================================================{RESET}")
+    print(f"{BOLD}{GREEN} ✨ Demonstration Succeeded! 10/10 Workflow Steps Verified!{RESET}")
     print(f"{BOLD}    To explore the full Web UI Cockpit, run:{RESET}")
     print(f"{BOLD}{CYAN}    python -m switchops.web.app{RESET}")
     print(f"{BOLD}{GREEN}========================================================================{RESET}\n")

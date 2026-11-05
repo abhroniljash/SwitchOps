@@ -5,7 +5,7 @@ native Slack Block Kit payloads and Discord Embeds with interactive buttons.
 
 from typing import Dict, Any, Optional
 from ..core.incident_engine import Incident
-from ..core.remediation_engine import RemediationProposal
+from ..core.workflow import Patch
 from ..core.git_commander import PullRequest
 
 
@@ -13,8 +13,9 @@ class PlatformAdapters:
     """Provides Slack Block Kit and Discord message formatting."""
 
     @staticmethod
-    def format_slack_incident_card(incident: Incident, proposal: RemediationProposal) -> Dict[str, Any]:
+    def format_slack_incident_card(incident: Incident, patch: Patch) -> Dict[str, Any]:
         """Formats an interactive Slack Block Kit card."""
+        target_file = patch.files_changed[0] if patch.files_changed else "service code"
         return {
             "blocks": [
                 {
@@ -28,31 +29,24 @@ class PlatformAdapters:
                 {
                     "type": "section",
                     "fields": [
-                        {"type": "mrkdwn", "text": f"*Service:* `{incident.service}`"},
+                        {"type": "mrkdwn", "text": f"*Service:* `{incident.service_name}`"},
                         {"type": "mrkdwn", "text": f"*Severity:* *{incident.severity.value}*"},
-                        {"type": "mrkdwn", "text": f"*Target:* `{proposal.target_file}`"},
-                        {"type": "mrkdwn", "text": f"*Risk Score:* `{proposal.risk_assessment}`"},
+                        {"type": "mrkdwn", "text": f"*Target:* `{target_file}`"},
+                        {"type": "mrkdwn", "text": f"*Risk Score:* `{patch.risk_notes}`"},
                     ]
                 },
                 {
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f"*Root Cause Analysis:*\n>{incident.root_cause_summary}"
+                        "text": f"*Root Cause Analysis:*\n>{incident.likely_root_cause or incident.summary}"
                     }
                 },
                 {
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f"*Proposed Fix (Unified Diff):*\n```{proposal.diff}```"
-                    }
-                },
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": f"*Automated Regression Verification:*\n```{proposal.test_run_output}```"
+                        "text": f"*Proposed Fix (Unified Diff):*\n```{patch.diff}```"
                     }
                 },
                 {
@@ -61,10 +55,10 @@ class PlatformAdapters:
                     "elements": [
                         {
                             "type": "button",
-                            "text": {"type": "plain_text", "text": "✅ Approve & Open PR", "emoji": True},
+                            "text": {"type": "plain_text", "text": "✅ Authorize Tests", "emoji": True},
                             "style": "primary",
                             "value": f"approve_{incident.id}",
-                            "action_id": "btn_approve_pr"
+                            "action_id": "btn_approve_patch"
                         },
                         {
                             "type": "button",
@@ -72,12 +66,6 @@ class PlatformAdapters:
                             "style": "danger",
                             "value": f"reject_{incident.id}",
                             "action_id": "btn_reject"
-                        },
-                        {
-                            "type": "button",
-                            "text": {"type": "plain_text", "text": "💬 Request Changes", "emoji": True},
-                            "value": f"modify_{incident.id}",
-                            "action_id": "btn_modify"
                         }
                     ]
                 }
@@ -85,23 +73,25 @@ class PlatformAdapters:
         }
 
     @staticmethod
-    def format_discord_incident_embed(incident: Incident, proposal: RemediationProposal) -> Dict[str, Any]:
+    def format_discord_incident_embed(incident: Incident, patch: Patch) -> Dict[str, Any]:
         """Formats a rich Discord Embed object."""
-        color = 0xFF0000 if incident.severity.value == "CRITICAL" else 0xFFA500
+        color = 0xFF0000 if incident.severity.value == "Critical" else 0xFFA500
+        target_file = patch.files_changed[0] if patch.files_changed else "service code"
         return {
             "embeds": [
                 {
                     "title": f"🚨 [SwitchOps] Production Incident: {incident.id}",
-                    "description": f"**Service:** `{incident.service}` | **Severity:** `{incident.severity.value}`\n\n"
-                                   f"**Root Cause:**\n{incident.root_cause_summary}\n\n"
-                                   f"**Target File:** `{proposal.target_file}`\n"
-                                   f"**Risk Assessment:** `{proposal.risk_assessment}`\n"
-                                   f"**Verification:** `{proposal.regression_test_name}` (PASSED ✅)",
+                    "description": (
+                        f"**Service:** `{incident.service_name}` | **Severity:** `{incident.severity.value}`\n\n"
+                        f"**Root Cause:**\n{incident.likely_root_cause or incident.summary}\n\n"
+                        f"**Target File:** `{target_file}`\n"
+                        f"**Risk Notes:** `{patch.risk_notes}`"
+                    ),
                     "color": color,
                     "fields": [
                         {
                             "name": "Proposed Diff",
-                            "value": f"```diff\n{proposal.diff[:800]}\n```",
+                            "value": f"```diff\n{patch.diff[:800]}\n```",
                             "inline": False
                         }
                     ],
@@ -121,9 +111,11 @@ class PlatformAdapters:
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f"🎉 *Incident `{incident.id}` Remediated Successfully!*\n"
-                                f"Pull Request opened: *<{pr.url}|PR #{pr.pr_id}: {pr.title}>*\n"
-                                f"Branch: `{pr.branch_name}` | Status: *{pr.status}*"
+                        "text": (
+                            f"🎉 *Incident `{incident.id}` Remediated Successfully!*\n"
+                            f"Pull Request opened: *<{pr.url}|PR #{pr.pr_number}: {pr.title}>*\n"
+                            f"Branch: `{pr.branch}` | Status: *{pr.status}*"
+                        )
                     }
                 }
             ]

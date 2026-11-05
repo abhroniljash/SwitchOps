@@ -1,68 +1,96 @@
-# 🎬 SwitchOps: Winning Demo Video Recording Script (2 Minutes)
-
-Use this script to record your **2-minute demo video** for the **Flip the Switch** Hackathon submission on Loom or YouTube.
-
----
-
-## ⏱️ Video Outline & Timestamps
-
-- **0:00 - 0:25**: The Problem & The Solution (Why SwitchOps?)
-- **0:25 - 1:00**: Live Incident Trigger & Automated RCA in the Switch Room
-- **1:00 - 1:30**: Human-in-the-Loop Collaboration (Wispr Voice Approval)
-- **1:30 - 1:50**: Automated GitHub PR & SandboxAQ Switch ROI Telemetry
-- **1:50 - 2:00**: Conclusion & Open-Source Impact
+# 🎬 SwitchOps: Hackathon Demo Recording Script (3–5 Minutes)
+**WeMakeDevs Flip the Switch 2026 Hackathon**  
+*Based on Section 18 of the Technical Implementation Guide*
 
 ---
 
-## 🎙️ Step-by-Step Narration Script
+## ⏱️ Video Outline (3–5 Minutes)
 
-### 1. Introduction (0:00 - 0:25)
-> *"Hi everyone! When production breaks at 2 AM, the mean time to resolution for on-call engineers is over 45 minutes. Engineers are forced to jump across disparate monitoring dashboards, inspect logs, manually locate buggy code, and write patches.*
->
-> *Today, I'm thrilled to introduce **SwitchOps**—an autonomous SRE teammate that embeds directly into your team's Slack and Discord channels using the open-source **Switch** bridge by SandboxAQ. Let's see it in action."*
-
-### 2. Live Incident & Autonomous Diagnosis (0:25 - 1:00)
-*(Screen: Show the SwitchOps Web UI on localhost:5000 or your Slack channel)*
-
-> *"Here in our incident dashboard, an alert fires: our payments microservice is throwing a 500 error on checkout.*
->
-> *(Click the **🚨 Trigger Production 500** button)*
->
-> *Immediately, Switch connects our multi-agent team into a shared incident room `#incident-inc-7842`:*
-> - *Our **Triage Agent** parses the stack trace and pinpoints the exact file and line number in `payments_service/app.py`.*
-> - *The diagnosis? An unhandled KeyError from lowercase currency inputs.*
-> - *Next, our **Remediation Agent** synthesizes a non-breaking surgical patch and generates an automated regression test, verifying that all 5 tests pass in 0.12 seconds."*
-
-### 3. Human-in-the-Loop Collaboration with Wispr Flow (1:00 - 1:30)
-*(Screen: Highlight the interactive approval card and click the Voice button)*
-
-> *"Crucially, SwitchOps believes in **Human-in-the-Loop engineering**. It doesn't deploy blindly without human oversight. It posts a unified diff and regression test results directly into the chat thread.*
->
-> *As the on-call engineer, I don't even need to touch my keyboard. Using our **Wispr Flow voice integration**, I can simply speak:*
->
-> *(Speak or click: **"Looks good SwitchOps, approve the hotfix and deploy to production"**)*
->
-> *Wispr Flow transcribes the intent with 98% confidence and dispatches the approval."*
-
-### 4. Git Automation & Switch ROI (1:30 - 1:50)
-*(Screen: Point to the Git PR link and the ROI grid on the right)*
-
-> *"Instantly, our **GitOps Agent** cuts a new git branch, commits the fix using Conventional Commits, opens a Pull Request on GitHub, and links the post-mortem report right back into our chat.*
->
-> *And by implementing the **SandboxAQ Switch ROI** framework, we observe:*
-> - *Our MTTR dropped from 45 minutes to just 3.6 seconds—a **97%+ reduction**.*
-> - *Over **$3,600** in downtime and engineering time saved.*
-> - *All for less than 1 cent in LLM tokens—delivering a **400x+ ROI**."*
-
-### 5. Closing (1:50 - 2:00)
-> *"SwitchOps proves that when you bridge AI agents into human collaboration channels with Switch, you don't just get a chatbot—you get an autonomous, reliable engineering partner.*
->
-> *Thank you to WeMakeDevs, DevTools Academy, and SandboxAQ for hosting Flip the Switch!"*
+- **0:00 – 0:30 (Step 1)**: Problem Statement (Fragmented incident response & on-call fatigue)
+- **0:30 – 1:00 (Step 2)**: Switch Architecture (Bridging team chat to autonomous agent workers)
+- **1:00 – 1:30 (Steps 3 & 4)**: Trigger Controlled HTTP 500 & Ingestion
+- **1:30 – 2:15 (Step 5)**: Triage Agent Evidence-Based Investigation (Real logs & repo files)
+- **2:15 – 3:00 (Step 6 & 7)**: Remediation Diff & Isolated Test Execution (First Approval)
+- **3:00 – 3:45 (Steps 8 & 9)**: GitOps Pull Request Creation (Second Approval) & Chat Confirmation
+- **3:45 – 4:30 (Step 10)**: Safety Controls & Transparent Operational Analytics
 
 ---
 
-## 🛠️ Quick Checklist Before Recording
-1. Start the web cockpit: `python -m switchops.web.app`
-2. Open `http://localhost:5000` in full screen (or split half-screen with Slack/Discord).
-3. Test the trigger button once to ensure smooth transitions.
-4. Keep Loom recording set to 1080p with mic enabled.
+## 🎙️ Spoken Narration Script
+
+### Step 1: The Problem (0:00 – 0:30)
+> *"Hello judges! When an application breaks in production, developers waste critical time jumping between monitoring alerts, terminal logs, git history, and Slack channels.*
+>
+> *Today, solo AI coding assistants sit isolated inside private IDEs. What engineering teams actually need is an active teammate directly inside their collaboration channels.*
+>
+> *Introducing **SwitchOps**—an autonomous incident commander and SRE teammate powered by **Switch** from SandboxAQ."*
+
+### Step 2: Show Switch & Chat Integration (0:30 – 1:00)
+*(Screen: Show Slack / Discord channel alongside the SwitchOps cockpit)*
+
+> *"Switch is the central nervous system of SwitchOps. It connects our team messaging channel directly to specialized AI agents in a shared room `#incident-inc-7189`.*
+>
+> *All incident context, evidence, and approvals are preserved in this shared thread—so the whole team stays informed without context fragmentation."*
+
+### Step 3 & 4: Trigger Controlled HTTP 500 (1:00 – 1:30)
+*(Screen: Click the **🚨 Trigger Demo 500** button or call `/demo/error-500`)*
+
+> *"Let's simulate a live incident. Our checkout microservice throws an unhandled HTTP 500 exception.*
+>
+> *Notice that SwitchOps immediately captures the alert, normalizes the event, deduplicates incoming signals, and enters the `RECEIVED` workflow state.*
+>
+> *Our team receives an instant acknowledgment in the room."*
+
+### Step 5: Triage Agent Evidence-Based RCA (1:30 – 2:15)
+*(Screen: Highlight the Triage findings, affected file, and evidence box)*
+
+> *"Next, our **Triage Agent** doesn't guess or give generic advice. It searches the repository and extracts concrete evidence:*
+> - *It isolates line 37 in `payments_service/app.py`.*
+> - *It diagnoses the exact root cause with **High Confidence**: an unhandled `KeyError` caused by lowercase currency strings missing dictionary keys.*
+> - *Notice how the uncertainty and evidence references are explicitly stated."*
+
+### Step 6 & 7: Scoped Patch & Real Isolated Tests (2:15 – 3:00)
+*(Screen: Show the unified diff viewer, then click **✅ Authorize Tests**)*
+
+> *"Our **Remediation Agent** synthesizes a minimal surgical patch. It doesn't perform broad refactoring and strictly rejects modifying sensitive configuration or secrets.*
+>
+> *Crucially, SwitchOps enforces **Human-in-the-Loop safety**.*
+>
+> *As the on-call engineer, I review the diff and approve running validation tests.*
+>
+> *(Click **✅ Authorize Tests**)*
+>
+> *Our isolated Test Runner executes the allowlisted test suite in the background and streams the real process output: **Exit Code 0, 5 Passed in 0.12s**.*
+> *We never show a green checkmark for a test that didn't run."*
+
+### Step 8 & 9: GitOps Pull Request Dispatch (3:00 – 3:45)
+*(Screen: Click **🚀 Create GitHub PR** and open the PR link)*
+
+> *"With tests verified, SwitchOps requests final authorization to open a Pull Request.*
+>
+> *(Click **🚀 Create GitHub PR**)*
+>
+> *The **GitOps Agent** creates an isolated branch `fix/incident-7189`, commits the approved patch, and generates a Pull Request with complete root cause documentation, evidence excerpts, and limitations.*
+>
+> *The PR link is posted right back into our Switch room for the team."*
+
+### Step 10: Safety Controls & Operational Analytics (3:45 – 4:30)
+*(Screen: Point to the Operational Analytics grid with the 'Simulated demo data' label)*
+
+> *"Finally, let's review our safety controls:*
+> - *Zero automated merges to main.*
+> - *Zero automated deployments.*
+> - *Strict command allowlists and path restrictions.*
+>
+> *On our analytics panel—transparently labeled as simulated demo data—we track real event timestamps: time to triage under 1 second, time to PR under 3 seconds, with 2 required human review gates.*
+>
+> *SwitchOps proves how Switch can turn AI into a trusted, safe on-call partner.*
+>
+> *Thank you to WeMakeDevs and DevTools Academy for hosting Flip the Switch!"*
+
+---
+
+## 🛠️ Recording Tips
+1. Keep the recording between **3 and 5 minutes**.
+2. Run `python -m switchops.web.app` and open `http://localhost:5000` in your browser.
+3. Keep Loom or OBS video resolution at **1080p** with crisp audio.

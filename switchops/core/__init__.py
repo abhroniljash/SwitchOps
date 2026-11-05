@@ -1,17 +1,41 @@
-from .incident_engine import IncidentEngine, Incident, IncidentSeverity, IncidentStatus
-from .remediation_engine import RemediationEngine, RemediationProposal
+from .incident_engine import IncidentEngine, Incident, IncidentSeverity
+from .remediation_engine import RemediationEngine
+from .test_runner import TestRunner
 from .git_commander import GitCommander, PullRequest
-from .roi_telemetry import ROITelemetryTracker, ROIMetrics
+from .roi_telemetry import ROITelemetryTracker, IncidentTelemetry
+from .security import redact_secrets, is_safe_path, is_command_allowed
+from .workflow import (
+    WorkflowState,
+    Evidence,
+    AgentTask,
+    Patch,
+    TestRun,
+    Approval,
+    AuditEvent,
+    validate_transition,
+    InvalidStateTransitionError,
+)
 
 __all__ = [
     "IncidentEngine",
     "Incident",
     "IncidentSeverity",
-    "IncidentStatus",
     "RemediationEngine",
-    "RemediationProposal",
+    "TestRunner",
     "GitCommander",
     "PullRequest",
     "ROITelemetryTracker",
-    "ROIMetrics",
+    "IncidentTelemetry",
+    "redact_secrets",
+    "is_safe_path",
+    "is_command_allowed",
+    "WorkflowState",
+    "Evidence",
+    "AgentTask",
+    "Patch",
+    "TestRun",
+    "Approval",
+    "AuditEvent",
+    "validate_transition",
+    "InvalidStateTransitionError",
 ]

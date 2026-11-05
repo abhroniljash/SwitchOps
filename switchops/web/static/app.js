@@ -1,79 +1,125 @@
 // SwitchOps Interactive Frontend Logic
-let currentRoomId = null;
+let currentIncidentId = null;
+let currentWorkflowState = "RECEIVED";
 
 async function triggerIncident() {
     const btn = document.getElementById("btnTriggerIncident");
     btn.disabled = true;
-    btn.innerText = "⏳ Ingesting Alert...";
+    btn.innerText = "⏳ Ingesting & Triaging...";
 
     try {
-        const resp = await fetch("/api/incident/trigger", {
+        const resp = await fetch("/incidents", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({})
+            body: JSON.stringify({ demo: true })
         });
         const data = await resp.json();
-        currentRoomId = data.room_id;
-
-        // Update UI components
+        currentIncidentId = data.incident_id;
         updateRoomView(data);
     } catch (err) {
         console.error("Error triggering incident:", err);
     } finally {
         btn.disabled = false;
-        btn.innerText = "🚨 Trigger Production 500";
+        btn.innerText = "🚨 Trigger Demo 500";
     }
 }
 
 function updateRoomView(data) {
     if (!data) return;
 
-    // Room info
     const inc = data.incident;
-    const prop = data.proposal;
+    const patch = data.patch;
+    const testRun = data.test_run;
+    const pr = data.pull_request;
 
-    document.getElementById("roomTitle").innerText = `incident-${inc.id.toLowerCase()}`;
-    document.getElementById("roomStatusBadge").innerText = inc.status;
-    document.getElementById("roomStatusBadge").style.backgroundColor = inc.status === "RESOLVED" ? "#238636" : "#d29922";
-    document.getElementById("roomStatusBadge").style.color = "#fff";
+    if (inc) {
+        currentIncidentId = inc.incident_id || inc.id;
+        currentWorkflowState = inc.status;
 
-    // Telemetry cards
-    document.getElementById("infoIncId").innerText = inc.id;
-    document.getElementById("infoService").innerText = inc.service;
-    document.getElementById("infoRootCause").innerText = inc.root_cause_summary || "Analyzing...";
-    document.getElementById("incidentSeverity").innerText = inc.severity;
-    document.getElementById("incidentSeverity").style.color = inc.severity === "CRITICAL" ? "#f85149" : "#d29922";
+        document.getElementById("roomTitle").innerText = `incident-${currentIncidentId.toLowerCase()}`;
+        
+        // Status Badge
+        const statusBadge = document.getElementById("roomStatusBadge");
+        statusBadge.innerText = inc.status;
+        statusBadge.style.backgroundColor = getStatusColor(inc.status);
+        statusBadge.style.color = "#fff";
 
-    // Proposal & Diff
-    if (prop) {
-        document.getElementById("diffTargetFile").innerText = prop.target_file;
-        renderDiff(prop.diff);
-        document.getElementById("terminalOutput").innerText = prop.test_run_output;
-        document.getElementById("testBadge").innerText = prop.tests_passed ? "5 PASSED ✅" : "FAILED ❌";
+        document.getElementById("infoIncId").innerText = currentIncidentId;
+        document.getElementById("infoService").innerText = inc.service_name;
+        document.getElementById("infoWorkflowState").innerText = inc.status;
+        document.getElementById("infoRootCause").innerText = inc.likely_root_cause || inc.summary || "Analyzing...";
+        
+        const sevBadge = document.getElementById("incidentSeverity");
+        sevBadge.innerText = inc.severity;
+        sevBadge.style.color = inc.severity === "Critical" ? "#f85149" : "#d29922";
 
-        // Show approval banner if awaiting
-        if (data.incident.status !== "RESOLVED" && data.incident.status !== "CLOSED") {
-            document.getElementById("approvalBanner").style.display = "flex";
-        } else {
-            document.getElementById("approvalBanner").style.display = "none";
+        if (inc.confidence && inc.confidence.level) {
+            document.getElementById("confidenceRow").style.display = "flex";
+            document.getElementById("infoConfidence").innerText = `${inc.confidence.level} (${inc.confidence.explanation})`;
         }
     }
 
-    // Pull request & ROI if resolved
-    if (data.pull_request) {
-        document.getElementById("approvalBanner").style.display = "none";
+    // Patch Diff Inspector
+    if (patch) {
+        if (patch.files_changed && patch.files_changed.length > 0) {
+            document.getElementById("diffTargetFile").innerText = patch.files_changed[0];
+        }
+        renderDiff(patch.diff);
     }
 
-    if (data.roi) {
-        document.getElementById("roiMttr").innerText = `${data.roi.mttr_reduction_percent}%`;
-        document.getElementById("roiSavings").innerText = `$${data.roi.total_value_delivered_usd.toLocaleString()}`;
-        document.getElementById("roiCost").innerText = `$${data.roi.llm_cost_usd}`;
-        document.getElementById("roiMultiplier").innerText = `${data.roi.roi_multiplier}x`;
+    // Test Runner Output
+    if (testRun) {
+        const testBadge = document.getElementById("testBadge");
+        testBadge.innerText = testRun.status === "PASSED" ? "PASSED ✅" : "FAILED ❌";
+        testBadge.className = testRun.status === "PASSED" ? "badge badge-success" : "badge badge-danger";
+        
+        const term = document.getElementById("terminalOutput");
+        term.innerText = `Command: ${testRun.command_profile}\nExit Code: ${testRun.exit_code} | Duration: ${testRun.duration_ms}ms\n\n${testRun.stdout_reference || testRun.stderr_reference}`;
+    }
+
+    // Step-by-Step Approval Banner
+    const banner = document.getElementById("approvalBanner");
+    const bannerTitle = document.getElementById("bannerTitle");
+    const bannerSubtitle = document.getElementById("bannerSubtitle");
+    const btnApprove = document.getElementById("btnApproveAction");
+
+    if (currentWorkflowState === "AWAITING_FIX_APPROVAL") {
+        banner.style.display = "flex";
+        bannerTitle.innerText = "Human-in-the-Loop Approval Required (Step 1 of 2):";
+        bannerSubtitle.innerText = "Review proposed patch diff. Authorize running isolated validation tests?";
+        btnApprove.innerText = "✅ Authorize Tests";
+    } else if (currentWorkflowState === "AWAITING_PR_APPROVAL") {
+        banner.style.display = "flex";
+        bannerTitle.innerText = "Human-in-the-Loop Approval Required (Step 2 of 2):";
+        bannerSubtitle.innerText = "Validation tests PASSED. Authorize creating Git branch and GitHub Pull Request?";
+        btnApprove.innerText = "🚀 Create GitHub PR";
+    } else {
+        banner.style.display = "none";
+    }
+
+    // Telemetry stats
+    if (data.analytics) {
+        document.getElementById("statTriageTime").innerText = `${data.analytics.average_time_to_triage_seconds}s`;
+        document.getElementById("statPrTime").innerText = `${data.analytics.average_time_to_pr_seconds}s`;
+        document.getElementById("statPassRate").innerText = data.analytics.test_pass_rate;
     }
 
     // Messages
     if (data.messages) {
         renderMessages(data.messages);
+    }
+}
+
+function getStatusColor(status) {
+    switch (status) {
+        case "PR_CREATED": return "#238636";
+        case "TEST_PASSED": return "#1f6feb";
+        case "AWAITING_FIX_APPROVAL":
+        case "AWAITING_PR_APPROVAL": return "#d29922";
+        case "TEST_FAILED":
+        case "FAILED":
+        case "REJECTED": return "#da3633";
+        default: return "#30363d";
     }
 }
 
@@ -110,6 +156,7 @@ function renderMessages(messages) {
         if (msg.role === "user") icon = "👤";
         else if (msg.sender.includes("Triage")) icon = "🔍";
         else if (msg.sender.includes("Remediation")) icon = "🛠️";
+        else if (msg.sender.includes("Test")) icon = "🧪";
         else if (msg.sender.includes("Git")) icon = "🚀";
 
         div.innerHTML = `
@@ -126,40 +173,41 @@ function renderMessages(messages) {
 }
 
 function formatMessageText(text) {
-    // Basic Markdown format for bold and links
     let formatted = escapeHtml(text);
     formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     formatted = formatted.replace(/`([^`]+)`/g, '<code class="mono" style="background:#21262d;padding:2px 4px;border-radius:4px;">$1</code>');
-    formatted = formatted.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" style="color:#58a6ff;">$1</a>');
+    formatted = formatted.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" style="color:#58a6ff;text-decoration:underline;">$1</a>');
     return formatted;
 }
 
-async function approveIncident() {
+async function handleApproveClick() {
+    if (!currentIncidentId) return;
+
+    const action = (currentWorkflowState === "AWAITING_PR_APPROVAL") ? "pr" : "patch";
     try {
-        const resp = await fetch("/api/incident/approve", {
+        const resp = await fetch(`/incidents/${currentIncidentId}/approve`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ room_id: currentRoomId })
+            body: JSON.stringify({ action: action, reviewer: "OnCallEngineer" })
         });
         const data = await resp.json();
-        document.getElementById("approvalBanner").style.display = "none";
         refreshState();
     } catch (e) {
-        console.error(e);
+        console.error("Approval error:", e);
     }
 }
 
 async function rejectIncident() {
+    if (!currentIncidentId) return;
     try {
-        await fetch("/api/incident/reject", {
+        await fetch(`/incidents/${currentIncidentId}/reject`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ room_id: currentRoomId })
+            body: JSON.stringify({ reviewer: "OnCallEngineer", reason: "Rejected by operator." })
         });
-        document.getElementById("approvalBanner").style.display = "none";
         refreshState();
     } catch (e) {
-        console.error(e);
+        console.error("Rejection error:", e);
     }
 }
 
@@ -170,10 +218,10 @@ async function sendMessage() {
 
     input.value = "";
     try {
-        await fetch("/api/chat/send", {
+        await fetch("/integrations/switch/events", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ room_id: currentRoomId, text: text })
+            body: JSON.stringify({ message: text, sender: "OnCallEngineer" })
         });
         refreshState();
     } catch (e) {
@@ -187,35 +235,9 @@ function handleInputKey(event) {
     }
 }
 
-async function triggerVoiceApprove() {
-    const sampleVoicePrompt = "Looks good SwitchOps, approve the hotfix and deploy to production.";
-    try {
-        await fetch("/api/voice/send", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ room_id: currentRoomId, transcript: sampleVoicePrompt })
-        });
-        refreshState();
-    } catch (e) {
-        console.error(e);
-    }
-}
-
-function promptVoiceCommand() {
-    const prompt = window.prompt("Speak or type via Wispr Flow Dictation:", "SwitchOps, investigate the payments 500 error and prepare hotfix");
-    if (prompt) {
-        fetch("/api/voice/send", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ room_id: currentRoomId, transcript: prompt })
-        }).then(() => refreshState());
-    }
-}
-
 async function refreshState() {
-    if (!currentRoomId) return;
     try {
-        const resp = await fetch(`/api/room/state?room_id=${currentRoomId}`);
+        const resp = await fetch("/api/room/state");
         const data = await resp.json();
         if (data.active) {
             updateRoomView(data);
@@ -225,37 +247,42 @@ async function refreshState() {
     }
 }
 
-async function openWisprModal() {
-    const modal = document.getElementById("wisprModal");
-    modal.style.display = "flex";
-    try {
-        const resp = await fetch("/api/wispr/scorecard");
-        const data = await resp.json();
-        document.getElementById("wisprScorecardContent").innerHTML = `
-            <div style="background:#0d1117;padding:12px;border-radius:6px;border:1px solid #30363d;font-family:monospace;font-size:12px;">
-                <p><strong>Track:</strong> ${data.hackathon_track}</p>
-                <p><strong>Wispr Flow Status:</strong> ACTIVE (Connected)</p>
-                <p><strong>Total Voice Prompts:</strong> ${data.total_voice_commands_processed}</p>
-                <p><strong>Words Spoken:</strong> ${data.estimated_words_spoken}</p>
-                <p><strong>Hands-Free Time Saved:</strong> ${data.estimated_hands_free_time_saved_minutes} minutes</p>
-                <p><strong>Voice Intent Accuracy:</strong> ${data.average_intent_accuracy}</p>
-                <hr style="border-color:#30363d;margin:10px 0;">
-                <p><strong>Voice Capabilities:</strong></p>
-                <ul>
-                    ${data.voice_first_features.map(f => `<li>${f}</li>`).join("")}
-                </ul>
-            </div>
-            <p style="margin-top:12px;font-size:12px;color:#8b949e;">
-                This scorecard satisfies the submission criteria for the Wispr Flow side track ($500 prize).
-            </p>
-        `;
-    } catch (e) {
-        console.error(e);
-    }
+function openManualIncidentModal() {
+    document.getElementById("manualModal").style.display = "flex";
 }
 
-function closeWisprModal(e) {
-    document.getElementById("wisprModal").style.display = "none";
+function closeManualModal() {
+    document.getElementById("manualModal").style.display = "none";
+}
+
+async function submitManualIncident(event) {
+    event.preventDefault();
+    const service = document.getElementById("manualService").value;
+    const severity = document.getElementById("manualSeverity").value;
+    const summary = document.getElementById("manualSummary").value;
+    const stack = document.getElementById("manualStackTrace").value;
+
+    closeManualModal();
+
+    const payload = {
+        source: "manual",
+        service_name: service,
+        severity: severity,
+        summary: summary,
+        stack_trace: stack,
+    };
+
+    try {
+        const resp = await fetch("/incidents", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        updateRoomView(data);
+    } catch (e) {
+        console.error("Manual intake error:", e);
+    }
 }
 
 function escapeHtml(str) {
