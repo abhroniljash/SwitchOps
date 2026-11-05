@@ -1,11 +1,14 @@
 """
 Security & Privacy Module: Redaction of sensitive credentials,
-path traversal prevention, and execution command allowlists.
+path traversal prevention, command allowlists, webhook HMAC signature validation,
+and dashboard API authentication guards.
 """
 
+import hashlib
+import hmac
 import os
 import re
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 # Regular expressions for detecting sensitive tokens and secrets
 SECRET_PATTERNS = [
@@ -40,7 +43,11 @@ ALLOWED_TEST_COMMAND_PREFIXES = [
     ("python", "-m", "pytest"),
     ("pytest",),
     ("unittest",),
+    ("docker", "run"),
 ]
+
+# Dangerous shell characters that should never be executed
+DANGEROUS_SHELL_CHARACTERS = [";", "&&", "||", "|", "`", "$", ">", "<"]
 
 
 def redact_secrets(text: str) -> str:
@@ -55,17 +62,17 @@ def redact_secrets(text: str) -> str:
 
 def is_safe_path(target_path: str, workspace_root: str) -> bool:
     """
-    Validates that target_path is within the workspace_root and
+    Strictly validates that target_path is within the canonical workspace_root and
     does not touch sensitive system or configuration files.
     """
     if not target_path or not workspace_root:
         return False
 
-    # Normalize absolute paths
-    abs_workspace = os.path.abspath(workspace_root)
-    abs_target = os.path.abspath(os.path.join(abs_workspace, target_path))
+    # Normalize and canonicalize absolute paths
+    abs_workspace = os.path.realpath(os.path.abspath(workspace_root))
+    abs_target = os.path.realpath(os.path.abspath(os.path.join(abs_workspace, target_path)))
 
-    # Path traversal check
+    # Path traversal check: must start with the canonical workspace root
     if not abs_target.startswith(abs_workspace):
         return False
 
@@ -84,6 +91,12 @@ def is_command_allowed(command: List[str]) -> bool:
     if not command:
         return False
 
+    # Block any shell meta-characters embedded inside arguments
+    for arg in command:
+        for dangerous in DANGEROUS_SHELL_CHARACTERS:
+            if dangerous in arg:
+                return False
+
     norm_cmd = [c.lower() for c in command]
     
     # Normalize python executable path (e.g. C:\Python313\python.exe -> python)
@@ -96,3 +109,43 @@ def is_command_allowed(command: List[str]) -> bool:
             return True
 
     return False
+
+
+def verify_hmac_signature(raw_payload: bytes, signature_header: Optional[str], secret: Optional[str]) -> bool:
+    """
+    Validates HMAC SHA256 webhook signatures (used by Switch, GitHub, and Sentry).
+    If no secret is configured, accepts requests in development mode.
+    """
+    if not secret:
+        # Development / local testing mode without secret verification
+        return True
+
+    if not signature_header:
+        return False
+
+    # Clean header prefixes like 'sha256=' or 'v0='
+    clean_signature = signature_header
+    if "=" in signature_header:
+        clean_signature = signature_header.split("=", 1)[1]
+
+    expected_sig = hmac.new(
+        secret.encode("utf-8"),
+        raw_payload,
+        hashlib.sha256
+    ).hexdigest()
+
+    return hmac.compare_digest(expected_sig.lower(), clean_signature.lower())
+
+
+def validate_api_key(provided_key: Optional[str], expected_key: Optional[str]) -> bool:
+    """Validates API Key / Bearer tokens for securing dashboard REST endpoints."""
+    if not expected_key:
+        # Dev mode: open access if no DASHBOARD_API_KEY is configured
+        return True
+
+    if not provided_key:
+        return False
+
+    # Support 'Bearer <key>'
+    clean_key = provided_key.replace("Bearer ", "").replace("bearer ", "").strip()
+    return hmac.compare_digest(clean_key, expected_key.strip())

@@ -1,0 +1,14 @@
+# Disposable, isolated test runner container for SwitchOps
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# Copy project files
+COPY . /app
+
+# Run the test suite
+CMD ["python", "-m", "unittest", "discover", "tests"]

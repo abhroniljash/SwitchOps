@@ -1,7 +1,7 @@
 """
 SwitchOps Web Application & REST API Surface.
-Implements the exact REST API endpoints and stateful endpoints specified in Section 14
-of the SwitchOps Roadmap, along with the demo 500 endpoint and integration health checks.
+Implements API authentication, Switch webhook HMAC signature validation,
+Sentry & AWS CloudWatch monitoring webhooks, and SQLite incident persistence.
 """
 
 import os
@@ -9,6 +9,8 @@ import time
 from flask import Flask, render_template, request, jsonify
 
 from switchops.switch_bridge.room_manager import SwitchOpsOrchestrator
+from switchops.switch_bridge.monitoring_adapters import SentryWebhookAdapter, CloudWatchWebhookAdapter
+from switchops.core.security import verify_hmac_signature, validate_api_key
 from switchops.core.incident_engine import IncidentSeverity
 from switchops.core.workflow import WorkflowState
 from switchops.config import get_config
@@ -28,7 +30,19 @@ orchestrator = SwitchOpsOrchestrator(workspace_root=os.getcwd())
 
 
 # =====================================================================
-# Controlled Demo Endpoint (Section 6)
+# Middleware / Authentication Guard (P1 Security)
+# =====================================================================
+def require_api_auth():
+    """Validates X-API-Key or Bearer token if DASHBOARD_API_KEY is configured."""
+    expected_key = os.getenv("DASHBOARD_API_KEY")
+    if not expected_key:
+        return True
+    provided_key = request.headers.get("X-API-Key") or request.headers.get("Authorization")
+    return validate_api_key(provided_key, expected_key)
+
+
+# =====================================================================
+# Controlled Demo Endpoint
 # =====================================================================
 @app.route("/demo/error-500", methods=["GET", "POST"])
 def demo_error_endpoint():
@@ -58,27 +72,86 @@ def index():
 
 
 # =====================================================================
-# Section 14: Core API Surface
+# Monitoring Webhooks: Sentry & AWS CloudWatch (P1 Monitoring)
 # =====================================================================
+@app.route("/integrations/sentry/webhook", methods=["POST"])
+def sentry_webhook():
+    """Ingests real error webhooks from Sentry."""
+    raw_payload = request.get_data()
+    secret = os.getenv("SENTRY_WEBHOOK_SECRET")
+    signature = request.headers.get("Sentry-Hook-Signature")
 
-# 1. POST /incidents - Create a manual or demo incident
+    if not verify_hmac_signature(raw_payload, signature, secret):
+        return jsonify({"error": "Invalid Sentry webhook signature"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    normalized = SentryWebhookAdapter.parse_event(payload)
+    incident = orchestrator.create_or_ingest_incident(normalized)
+    orchestrator.run_triage(incident.id)
+
+    return jsonify({"status": "received", "source": "sentry", "incident_id": incident.id}), 201
+
+
+@app.route("/integrations/cloudwatch/webhook", methods=["POST"])
+def cloudwatch_webhook():
+    """Ingests AWS CloudWatch Alarm notifications delivered via Amazon SNS."""
+    payload = request.get_json(silent=True) or {}
+    normalized = CloudWatchWebhookAdapter.parse_event(payload)
+    incident = orchestrator.create_or_ingest_incident(normalized)
+    orchestrator.run_triage(incident.id)
+
+    return jsonify({"status": "received", "source": "cloudwatch", "incident_id": incident.id}), 201
+
+
+# =====================================================================
+# Switch Integration: Webhook & Events (P1 Security Signature Validation)
+# =====================================================================
+@app.route("/integrations/switch/events", methods=["POST"])
+@app.route("/api/chat/send", methods=["POST"])
+def receive_switch_event():
+    raw_body = request.get_data()
+    secret = os.getenv("SWITCH_WEBHOOK_SECRET")
+    signature = request.headers.get("X-Switch-Signature")
+
+    # Validate Switch webhook signature if secret is configured
+    if not verify_hmac_signature(raw_body, signature, secret):
+        return jsonify({"error": "Invalid Switch webhook signature"}), 401
+
+    data = request.get_json(silent=True) or {}
+    raw_event = {
+        "event_id": data.get("event_id"),
+        "room_id": data.get("room_id") or orchestrator.active_room_id,
+        "sender": data.get("user") or data.get("sender") or "OnCallEngineer",
+        "message": data.get("text") or data.get("message") or "",
+        "timestamp": time.time(),
+    }
+    result = orchestrator.handle_incoming_switch_event(raw_event)
+    room_id = orchestrator.active_room_id
+    messages = orchestrator.switch_client.get_room_messages(room_id) if room_id else []
+
+    return jsonify({"result": result, "messages": messages})
+
+
+# =====================================================================
+# Section 14: Core API Surface (Protected by Optional Auth)
+# =====================================================================
 @app.route("/incidents", methods=["POST"])
 @app.route("/api/incidents", methods=["POST"])
 @app.route("/api/incident/trigger", methods=["POST"])
 def create_incident():
+    if not require_api_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+
     data = request.get_json(silent=True) or {}
     alert_payload = data.get("alert") or data
 
     if alert_payload.get("demo") is True or not alert_payload.get("service_name"):
-        # Demo incident trigger
         incident = orchestrator.create_or_ingest_incident()
     else:
-        # Manual incident submission with input validation
         if not alert_payload.get("summary") and not alert_payload.get("error_message"):
             return jsonify({"error": "Validation Error: 'summary' or 'error_message' is required"}), 400
         incident = orchestrator.create_or_ingest_incident(alert_payload)
 
-    # Automatically trigger triage
     task = None
     try:
         incident, task = orchestrator.run_triage(incident.id)
@@ -96,7 +169,6 @@ def create_incident():
     }), 201
 
 
-# 2. GET /incidents - List incidents with optional filters
 @app.route("/incidents", methods=["GET"])
 @app.route("/api/incidents", methods=["GET"])
 def list_incidents():
@@ -114,7 +186,13 @@ def list_incidents():
     return jsonify({"incidents": results, "total": len(results)})
 
 
-# 3. GET /incidents/{id} - Read incident details, evidence, and timeline
+@app.route("/api/incidents/history", methods=["GET"])
+def incident_history():
+    """Returns persistent incident records from SQLite."""
+    persisted = orchestrator.db.load_all_incidents()
+    return jsonify({"history": persisted, "total": len(persisted)})
+
+
 @app.route("/incidents/<incident_id>", methods=["GET"])
 @app.route("/api/incidents/<incident_id>", methods=["GET"])
 def get_incident_detail(incident_id):
@@ -139,10 +217,12 @@ def get_incident_detail(incident_id):
     })
 
 
-# 4. POST /incidents/{id}/triage - Start or retry triage
 @app.route("/incidents/<incident_id>/triage", methods=["POST"])
 @app.route("/api/incidents/<incident_id>/triage", methods=["POST"])
 def trigger_triage(incident_id):
+    if not require_api_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+
     if incident_id not in orchestrator.sessions:
         return jsonify({"error": "Incident not found"}), 404
 
@@ -153,10 +233,12 @@ def trigger_triage(incident_id):
         return jsonify({"error": str(e)}), 400
 
 
-# 5. POST /incidents/{id}/patch - Generate proposed remediation patch
 @app.route("/incidents/<incident_id>/patch", methods=["POST"])
 @app.route("/api/incidents/<incident_id>/patch", methods=["POST"])
 def generate_patch_endpoint(incident_id):
+    if not require_api_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+
     if incident_id not in orchestrator.sessions:
         return jsonify({"error": "Incident not found"}), 404
 
@@ -167,7 +249,6 @@ def generate_patch_endpoint(incident_id):
         return jsonify({"error": str(e)}), 400
 
 
-# 6. POST /incidents/{id}/tests - Run configured validation
 @app.route("/incidents/<incident_id>/tests", methods=["POST"])
 @app.route("/api/incidents/<incident_id>/tests", methods=["POST"])
 def run_tests_endpoint(incident_id):
@@ -177,18 +258,20 @@ def run_tests_endpoint(incident_id):
     session = orchestrator.sessions[incident_id]
     test_run = orchestrator.test_runner.run_tests(incident_id)
     session["test_run"] = test_run
+    orchestrator.db.save_test_run(test_run)
     return jsonify({"test_run": test_run.to_dict()})
 
 
-# 7. POST /incidents/{id}/approve - Approve or reject specified action
 @app.route("/incidents/<incident_id>/approve", methods=["POST"])
 @app.route("/api/incidents/<incident_id>/approve", methods=["POST"])
 @app.route("/api/incident/approve", methods=["POST"])
 def approve_action(incident_id=None):
+    if not require_api_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+
     data = request.get_json(silent=True) or {}
     inc_id = incident_id or data.get("incident_id")
     if not inc_id:
-        # Default to latest active incident
         if orchestrator.sessions:
             inc_id = list(orchestrator.sessions.keys())[-1]
         else:
@@ -204,7 +287,6 @@ def approve_action(incident_id=None):
 
     try:
         if action == "pr" or incident.status == WorkflowState.AWAITING_PR_APPROVAL:
-            # User is approving the Pull Request
             pr = orchestrator.approve_pr_creation(inc_id, reviewer=reviewer)
             return jsonify({
                 "status": "pr_approved",
@@ -213,7 +295,6 @@ def approve_action(incident_id=None):
                 "incident": incident.to_dict(),
             })
         else:
-            # User is approving the Patch (Step 1)
             test_run = orchestrator.approve_patch(inc_id, reviewer=reviewer)
             return jsonify({
                 "status": "patch_approved",
@@ -225,7 +306,6 @@ def approve_action(incident_id=None):
         return jsonify({"error": str(e)}), 400
 
 
-# Reject Action
 @app.route("/incidents/<incident_id>/reject", methods=["POST"])
 @app.route("/api/incidents/<incident_id>/reject", methods=["POST"])
 @app.route("/api/incident/reject", methods=["POST"])
@@ -245,32 +325,41 @@ def reject_action(incident_id=None):
     return jsonify({"status": "rejected", "incident": inc.to_dict()})
 
 
-# 8. POST /integrations/switch/events - Official Switch protocol receiver
-@app.route("/integrations/switch/events", methods=["POST"])
-@app.route("/api/chat/send", methods=["POST"])
-def receive_switch_event():
+@app.route("/incidents/<incident_id>/retry", methods=["POST"])
+@app.route("/api/incidents/<incident_id>/retry", methods=["POST"])
+@app.route("/api/incident/retry", methods=["POST"])
+def retry_action(incident_id=None):
+    """Synthesizes an alternative patch following a test failure or manual retry."""
+    if not require_api_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+
     data = request.get_json(silent=True) or {}
-    raw_event = {
-        "event_id": data.get("event_id"),
-        "room_id": data.get("room_id") or orchestrator.active_room_id,
-        "sender": data.get("user") or data.get("sender") or "OnCallEngineer",
-        "message": data.get("text") or data.get("message") or "",
-        "timestamp": time.time(),
-    }
-    result = orchestrator.handle_incoming_switch_event(raw_event)
-    active_inc_id = list(orchestrator.sessions.keys())[-1] if orchestrator.sessions else None
-    room_id = orchestrator.active_room_id
-    messages = orchestrator.switch_client.get_room_messages(room_id) if room_id else []
+    inc_id = incident_id or data.get("incident_id")
+    if not inc_id:
+        if orchestrator.sessions:
+            inc_id = list(orchestrator.sessions.keys())[-1]
+        else:
+            return jsonify({"error": "No active incident"}), 400
 
-    return jsonify({"result": result, "messages": messages})
+    reviewer = data.get("reviewer") or "OnCallEngineer"
+    try:
+        patch, task = orchestrator.retry_remediation(inc_id, reviewer=reviewer)
+        return jsonify({
+            "status": "alternative_patch_generated",
+            "patch": patch.to_dict(),
+            "task": task.to_dict(),
+            "incident": orchestrator.sessions[inc_id]["incident"].to_dict()
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 
-# 9. GET /integrations/health - Return connection status for all integrations
 @app.route("/integrations/health", methods=["GET"])
 @app.route("/api/health", methods=["GET"])
 def integration_health():
     switch_health = orchestrator.switch_adapter.check_health()
     github_status = "configured" if os.getenv("GITHUB_TOKEN") else "test_mode_active"
+    docker_status = "available" if orchestrator.test_runner.docker_available else "dockerfile_ready"
 
     return jsonify({
         "status": "ok",
@@ -278,23 +367,23 @@ def integration_health():
             "switch": switch_health,
             "chat_platform": {"platform": "Slack / Discord", "status": "connected_via_switch"},
             "github": {"status": github_status, "repository": orchestrator.git_commander.repository},
-            "monitoring": {"status": "ready", "sources": ["demo_endpoint", "manual_form", "webhooks"]},
+            "monitoring": {"status": "ready", "sources": ["demo_500", "manual_form", "sentry_webhook", "cloudwatch_sns"]},
+            "test_runner": {"docker": docker_status, "mode": "isolated_execution"},
+            "database": {"engine": "SQLite", "status": "connected", "path": orchestrator.db.db_path},
+            "ai_agent": {"provider": orchestrator.incident_engine.llm.provider, "configured": orchestrator.incident_engine.llm.is_configured},
         },
-        "mode": "simulation",
         "timestamp": time.time()
     })
 
 
-# 10. GET /agents/tasks - List recent agent tasks
 @app.route("/agents/tasks", methods=["GET"])
 @app.route("/api/agents/tasks", methods=["GET"])
 def list_agent_tasks():
     limit = int(request.args.get("limit", 20))
-    tasks = [t.to_dict() for t in reversed(orchestrator.agent_tasks[-limit:])]
-    return jsonify({"tasks": tasks, "total": len(orchestrator.agent_tasks)})
+    tasks = orchestrator.db.load_agent_tasks(limit)
+    return jsonify({"tasks": tasks, "total": len(tasks)})
 
 
-# 11. State and Analytics Summary
 @app.route("/api/room/state", methods=["GET"])
 def room_state():
     if not orchestrator.sessions:
@@ -316,6 +405,7 @@ def room_state():
         "test_run": test_run.to_dict() if test_run else None,
         "pull_request": pr.to_dict() if pr else None,
         "analytics": orchestrator.telemetry.get_summary(),
+        "tasks": [t.to_dict() for t in reversed(orchestrator.agent_tasks[-6:])],
         "messages": orchestrator.switch_client.get_room_messages(incident.switch_room_id),
     })
 

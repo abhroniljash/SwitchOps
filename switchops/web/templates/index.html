@@ -30,7 +30,7 @@
                     <span class="dot green"></span> Chat: Slack/Discord
                 </div>
                 <div class="badge badge-health">
-                    <span class="dot green"></span> GitHub: Ready
+                    <span class="dot green"></span> DB: SQLite Active
                 </div>
                 <div class="badge badge-simulated" title="Roadmap Section 2 & 16: All demo metrics and test incidents are labeled as simulated.">
                     ⚠️ Simulated Demo Data
@@ -38,6 +38,12 @@
             </div>
 
             <div class="nav-actions">
+                <button class="btn btn-secondary" onclick="openHistoryModal()" title="View and filter all incident history from SQLite">
+                    📁 History & Filter
+                </button>
+                <select id="historySelect" onchange="switchIncidentFromHistory()" class="incident-selector" title="Switch incident from SQLite history">
+                    <option value="">📁 Past Incidents...</option>
+                </select>
                 <button class="btn btn-secondary" onclick="openManualIncidentModal()">
                     📝 Manual Intake
                 </button>
@@ -80,15 +86,16 @@
                 <!-- Floating Human-in-the-Loop Approval Banner -->
                 <div class="approval-banner" id="approvalBanner" style="display: none;">
                     <div class="banner-content">
-                        <span class="banner-icon">⚠️</span>
+                        <span class="banner-icon" id="bannerIcon">⚠️</span>
                         <div class="banner-text">
                             <strong id="bannerTitle">Human-in-the-Loop Approval Required (Step 1 of 2):</strong>
-                            <span id="bannerSubtitle">Review proposed patch diff. Authorize running isolated validation tests?</span>
+                            <span id="bannerSubtitle">Review proposed patch diff. Authorize applying patch to disk and running isolated tests?</span>
                         </div>
                     </div>
                     <div class="banner-buttons">
-                        <button class="btn btn-success" id="btnApproveAction" onclick="handleApproveClick()">✅ Approve</button>
-                        <button class="btn btn-secondary-danger" onclick="rejectIncident()">❌ Reject</button>
+                        <button class="btn btn-success" id="btnApproveAction" onclick="handleApproveClick()">✅ Authorize Tests</button>
+                        <button class="btn btn-warning" id="btnRetryAction" onclick="handleRetryClick()" style="display: none;">🔄 Suggest Alternative Fix</button>
+                        <button class="btn btn-secondary-danger" id="btnRejectAction" onclick="rejectIncident()">❌ Reject</button>
                     </div>
                 </div>
 
@@ -134,7 +141,7 @@
                 <!-- Code Diff Inspector Card -->
                 <div class="card diff-card">
                     <div class="card-header">
-                        <h3>🔍 Remediation Diff (Safe Patch)</h3>
+                        <h3>🔍 Remediation Diff (Actual Patch)</h3>
                         <span class="file-name mono" id="diffTargetFile">payments_service/app.py</span>
                     </div>
                     <div class="diff-viewer mono" id="diffViewer">
@@ -153,6 +160,17 @@
                     <pre class="terminal-output mono" id="terminalOutput">
 [SwitchOps Test Runner] Idle. Awaiting patch approval to execute allowlisted tests.
                     </pre>
+                </div>
+
+                <!-- Agent Execution Logs / Tasks Card (P1 & P2 Polish) -->
+                <div class="card task-card">
+                    <div class="card-header">
+                        <h3>🤖 Agent Execution Tasks & Audit Log</h3>
+                        <span class="badge badge-simulated-small">Active Multi-Agent Stream</span>
+                    </div>
+                    <div class="task-list mono" id="agentTaskList">
+                        <div class="task-row"><span class="task-agent">[System]</span> Awaiting incident detection...</div>
+                    </div>
                 </div>
 
                 <!-- Transparent Operational Analytics Card -->
@@ -228,6 +246,56 @@ KeyError: 'eur'</textarea>
                         <button type="submit" class="btn btn-primary">Submit Incident</button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Incident History & Filter Modal (P1 & P2 Persistence & History Filtering) -->
+    <div class="modal-backdrop" id="historyModal" style="display: none;" onclick="closeHistoryModal(event)">
+        <div class="modal-card modal-large" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2>📁 Incident History Explorer (SQLite Persistence)</h2>
+                <button class="btn-close" onclick="closeHistoryModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="history-filter-bar">
+                    <input type="text" id="historySearchInput" placeholder="Search by ID, summary, or service..." oninput="filterIncidentHistoryTable()">
+                    <select id="historySeverityFilter" onchange="filterIncidentHistoryTable()">
+                        <option value="">All Severities</option>
+                        <option value="Critical">Critical</option>
+                        <option value="High">High</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Low">Low</option>
+                    </select>
+                    <select id="historyStatusFilter" onchange="filterIncidentHistoryTable()">
+                        <option value="">All Statuses</option>
+                        <option value="RECEIVED">RECEIVED</option>
+                        <option value="AWAITING_FIX_APPROVAL">AWAITING_FIX_APPROVAL</option>
+                        <option value="TESTING">TESTING</option>
+                        <option value="TEST_PASSED">TEST_PASSED</option>
+                        <option value="TEST_FAILED">TEST_FAILED</option>
+                        <option value="AWAITING_PR_APPROVAL">AWAITING_PR_APPROVAL</option>
+                        <option value="PR_CREATED">PR_CREATED</option>
+                        <option value="REJECTED">REJECTED</option>
+                    </select>
+                </div>
+                <div class="history-table-container">
+                    <table class="history-table">
+                        <thead>
+                            <tr>
+                                <th>Incident ID</th>
+                                <th>Severity</th>
+                                <th>Service</th>
+                                <th>Status</th>
+                                <th>Summary</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyTableBody">
+                            <tr><td colspan="6" style="text-align: center; color: var(--text-secondary); padding: 20px;">Loading SQLite history...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>

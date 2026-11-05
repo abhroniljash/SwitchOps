@@ -147,12 +147,132 @@ class TestIsolatedTestRunner(unittest.TestCase):
         self.assertIn("Ran 4 tests", output_text)
 
 
+class TestP0CriticalCapabilities(unittest.TestCase):
+    """Unit tests for the 6 P0 critical changes."""
+
+    def setUp(self):
+        self.workspace = os.path.abspath(".")
+        self.app_path = os.path.join(self.workspace, "switchops", "sample_apps", "payments_service", "app.py")
+        with open(self.app_path, "r", encoding="utf-8") as f:
+            self.original_app_code = f.read()
+
+    def tearDown(self):
+        if self.original_app_code and os.path.exists(self.app_path):
+            with open(self.app_path, "w", encoding="utf-8") as f:
+                f.write(self.original_app_code)
+
+    def test_llm_client_initialization_and_fallback(self):
+        from switchops.core.llm_client import LLMClient
+        client = LLMClient(provider="gemini", api_key="")
+        self.assertFalse(client.is_configured)
+        res = client.generate("Analyze this stack trace")
+        self.assertEqual(res["model"], "offline-sre-engine")
+        self.assertFalse(res["live"])
+
+    def test_remediation_actual_patch_application_and_revert(self):
+        from switchops.core.remediation_engine import RemediationEngine
+        engine = RemediationEngine(workspace_root=self.workspace)
+        inc_engine = IncidentEngine(workspace_root=self.workspace)
+        inc = inc_engine.create_demo_incident()
+        inc_engine.triage(inc)
+        patch, task = engine.generate_patch(inc)
+
+        # 1. Apply patch to disk
+        applied = engine.apply_patch(patch)
+        self.assertTrue(applied)
+        with open(self.app_path, "r", encoding="utf-8") as f:
+            patched_content = f.read()
+        self.assertIn("clean_from = str(from_currency).upper().strip()", patched_content)
+
+        # 2. Revert patch
+        reverted = engine.revert_patch(patch)
+        self.assertTrue(reverted)
+        with open(self.app_path, "r", encoding="utf-8") as f:
+            reverted_content = f.read()
+        self.assertEqual(reverted_content, self.original_app_code)
+
+    def test_test_runner_reports_environment(self):
+        runner = TestRunner(workspace_root=self.workspace)
+        test_run = runner.run_tests("INC-ENV-TEST")
+        self.assertIn("Environment:", test_run.stdout_reference)
+
+    def test_sqlite_persistence_preserves_records(self):
+        from switchops.core.database import Database
+        import tempfile
+        temp_db = os.path.join(tempfile.gettempdir(), f"test_switchops_{int(time.time())}.db")
+        db = Database(db_path=temp_db)
+        
+        engine = IncidentEngine(workspace_root=self.workspace)
+        inc = engine.create_demo_incident()
+        db.save_incident(inc)
+
+        # Load back in fresh instance
+        db2 = Database(db_path=temp_db)
+        loaded = db2.load_all_incidents()
+        self.assertTrue(any(row["id"] == inc.id for row in loaded))
+        if os.path.exists(temp_db):
+            os.remove(temp_db)
+
+    def test_webhook_hmac_signature_validation(self):
+        from switchops.core.security import verify_hmac_signature
+        import hmac, hashlib
+        secret = "super_secret_webhook_key"
+        payload = b'{"event": "incident.created"}'
+        sig = hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
+
+        # Valid signature
+        self.assertTrue(verify_hmac_signature(payload, sig, secret))
+        self.assertTrue(verify_hmac_signature(payload, f"sha256={sig}", secret))
+        # Tampered payload
+        self.assertFalse(verify_hmac_signature(b'{"tampered": true}', sig, secret))
+
+    def test_dashboard_api_key_validation(self):
+        from switchops.core.security import validate_api_key
+        # Open in dev when expected is empty
+        self.assertTrue(validate_api_key("anything", None))
+        # Secure check when expected is set
+        self.assertTrue(validate_api_key("Bearer my-secret-token", "my-secret-token"))
+        self.assertFalse(validate_api_key("wrong-token", "my-secret-token"))
+
+    def test_monitoring_webhook_adapters(self):
+        from switchops.switch_bridge.monitoring_adapters import SentryWebhookAdapter, CloudWatchWebhookAdapter
+        sentry_raw = {"project_name": "payments-api", "data": {"issue": {"title": "KeyError: 'eur' in convert_currency", "culprit": "payments.py:37"}}}
+        sentry_norm = SentryWebhookAdapter.parse_event(sentry_raw)
+        self.assertEqual(sentry_norm["source"], "sentry")
+        self.assertEqual(sentry_norm["service_name"], "payments-api")
+
+        cw_raw = {"AlarmName": "High5xxErrors", "NewStateReason": "Threshold breached > 5%"}
+        cw_norm = CloudWatchWebhookAdapter.parse_event(cw_raw)
+        self.assertEqual(cw_norm["source"], "cloudwatch")
+        self.assertEqual(cw_norm["severity"], "Critical")
+
+    def test_alternative_fix_on_test_failure(self):
+        from switchops.core.remediation_engine import RemediationEngine
+        engine = RemediationEngine(workspace_root=self.workspace)
+        inc_engine = IncidentEngine(workspace_root=self.workspace)
+        inc = inc_engine.create_demo_incident()
+        inc_engine.triage(inc)
+        fake_failed_run = TestRun(incident_id=inc.id, exit_code=1, status="FAILED")
+
+        alt_patch, task = engine.suggest_alternative_fix(inc, fake_failed_run)
+        self.assertIn("Refined", alt_patch.explanation)
+        self.assertEqual(task.status, "COMPLETED")
+
+
 class TestEndToEndWorkflow(unittest.TestCase):
     """Full End-to-End Acceptance Test specified in Section 17."""
 
     def setUp(self):
         self.workspace = os.path.abspath(".")
+        self.app_path = os.path.join(self.workspace, "switchops", "sample_apps", "payments_service", "app.py")
+        with open(self.app_path, "r", encoding="utf-8") as f:
+            self.original_app_code = f.read()
         self.orchestrator = SwitchOpsOrchestrator(workspace_root=self.workspace)
+
+    def tearDown(self):
+        if self.original_app_code and os.path.exists(self.app_path):
+            with open(self.app_path, "w", encoding="utf-8") as f:
+                f.write(self.original_app_code)
 
     def test_full_incident_remediation_lifecycle(self):
         # 1. Ingest incident
@@ -182,6 +302,36 @@ class TestEndToEndWorkflow(unittest.TestCase):
         # 6. Verify audit trail
         audits = [a for a in self.orchestrator.audit_log if a.incident_id == inc.id]
         self.assertGreaterEqual(len(audits), 4)
+
+    def test_remediation_retry_after_failure(self):
+        """P1 AI Agent: Tests handling failed tests and suggesting alternative fixes."""
+        inc = self.orchestrator.create_or_ingest_incident()
+        inc, _ = self.orchestrator.run_triage(inc.id)
+        self.assertEqual(inc.status, WorkflowState.AWAITING_FIX_APPROVAL)
+
+        # Simulate test failure transition
+        session = self.orchestrator.sessions[inc.id]
+        session["incident"].status = WorkflowState.TEST_FAILED
+        fake_failure = TestRun(
+            incident_id=inc.id,
+            command_profile="python -m unittest",
+            exit_code=1,
+            status="FAILED",
+            stdout_reference="",
+            stderr_reference="AssertionError: currency failed validation",
+            duration_ms=120
+        )
+        session["test_run"] = fake_failure
+
+        # Call retry_remediation
+        refined_patch, retry_task = self.orchestrator.retry_remediation(inc.id, reviewer="SeniorSRE")
+        self.assertEqual(session["incident"].status, WorkflowState.AWAITING_FIX_APPROVAL)
+        self.assertIn("Refined following test runner failure output", refined_patch.explanation)
+        self.assertEqual(retry_task.status, "COMPLETED")
+
+        # Verify Switch room was notified of alternative patch
+        messages = self.orchestrator.switch_client.get_room_messages(inc.switch_room_id)
+        self.assertTrue(any("Alternative Remediation Synthesized" in m["text"] for m in messages))
 
 
 if __name__ == "__main__":

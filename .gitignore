@@ -24,6 +24,11 @@ wheels/
 .coverage
 htmlcov/
 
+# SQLite Database
+*.db
+*.sqlite3
+*.db-journal
+
 # Virtual Environments
 venv/
 .venv/

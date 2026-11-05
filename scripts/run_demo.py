@@ -100,6 +100,9 @@ def main():
     print(f"   {GREEN}✓ Test Pass Rate:{RESET} {summary['test_pass_rate']}")
     print(f"   {GREEN}✓ Safety Rules:{RESET} No automatic merge, no direct commits to main, human approval required.")
 
+    # Cleanup: restore demo service file so demo can be repeated cleanly
+    orchestrator.remediation_engine.revert_patch(patch)
+
     print(f"\n{BOLD}{GREEN}========================================================================{RESET}")
     print(f"{BOLD}{GREEN} ✨ Demonstration Succeeded! 10/10 Workflow Steps Verified!{RESET}")
     print(f"{BOLD}    To explore the full Web UI Cockpit, run:{RESET}")

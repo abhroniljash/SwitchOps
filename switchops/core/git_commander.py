@@ -124,6 +124,19 @@ class GitCommander:
         pr_url = f"https://github.com/{self.repository}/pull/{pr_number}"
         is_live = False
 
+        # Attempt local git branch & commit if running inside a git repository
+        try:
+            import subprocess
+            if os.path.isdir(os.path.join(self.workspace_root, ".git")):
+                subprocess.run(["git", "checkout", "-B", branch_name], cwd=self.workspace_root, capture_output=True, timeout=5)
+                for f in patch.files_changed:
+                    subprocess.run(["git", "add", f], cwd=self.workspace_root, capture_output=True, timeout=5)
+                subprocess.run(["git", "commit", "-m", title], cwd=self.workspace_root, capture_output=True, timeout=5)
+                if self.github_token:
+                    subprocess.run(["git", "push", "-u", "origin", branch_name], cwd=self.workspace_root, capture_output=True, timeout=8)
+        except Exception:
+            pass
+
         # Attempt real GitHub REST API call if token is provided
         if self.github_token and "/" in self.repository:
             try:

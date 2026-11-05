@@ -1,6 +1,15 @@
 // SwitchOps Interactive Frontend Logic
 let currentIncidentId = null;
 let currentWorkflowState = "RECEIVED";
+let cachedIncidents = [];
+
+// Initialize on page load
+document.addEventListener("DOMContentLoaded", () => {
+    loadIncidentHistory();
+    refreshState();
+    // Real-time status update loop (every 3.5s)
+    setInterval(refreshState, 3500);
+});
 
 async function triggerIncident() {
     const btn = document.getElementById("btnTriggerIncident");
@@ -16,11 +25,127 @@ async function triggerIncident() {
         const data = await resp.json();
         currentIncidentId = data.incident_id;
         updateRoomView(data);
+        loadIncidentHistory();
     } catch (err) {
         console.error("Error triggering incident:", err);
     } finally {
         btn.disabled = false;
         btn.innerText = "🚨 Trigger Demo 500";
+    }
+}
+
+async function loadIncidentHistory() {
+    try {
+        const resp = await fetch("/api/incidents/history");
+        const data = await resp.json();
+        cachedIncidents = data.history || [];
+        
+        // Populate quick dropdown
+        const select = document.getElementById("historySelect");
+        if (select) {
+            select.innerHTML = '<option value="">📁 Past Incidents...</option>';
+            cachedIncidents.forEach(inc => {
+                const opt = document.createElement("option");
+                opt.value = inc.id;
+                opt.innerText = `${inc.id} (${inc.severity} - ${inc.status})`;
+                if (inc.id === currentIncidentId) opt.selected = true;
+                select.appendChild(opt);
+            });
+        }
+
+        // Render modal table
+        renderHistoryTable(cachedIncidents);
+    } catch (e) {
+        console.error("Error loading history:", e);
+    }
+}
+
+function renderHistoryTable(incidents) {
+    const tbody = document.getElementById("historyTableBody");
+    if (!tbody) return;
+
+    if (!incidents || incidents.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-secondary); padding: 20px;">No incidents matching filter.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = incidents.map(inc => {
+        const sevColor = inc.severity === "Critical" ? "#f85149" : (inc.severity === "High" ? "#d29922" : "#58a6ff");
+        const statColor = getStatusColor(inc.status);
+        const isCurrent = inc.id === currentIncidentId;
+
+        return `
+            <tr style="${isCurrent ? 'background: rgba(88, 166, 255, 0.1);' : ''}">
+                <td class="mono" style="font-weight: 600; color: #58a6ff;">${escapeHtml(inc.id)}</td>
+                <td><span style="color: ${sevColor}; font-weight: 600;">${escapeHtml(inc.severity)}</span></td>
+                <td>${escapeHtml(inc.service_name || 'payments-service')}</td>
+                <td><span class="badge" style="background-color: ${statColor}; color: #fff; font-size: 11px;">${escapeHtml(inc.status)}</span></td>
+                <td style="max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(inc.summary || '')}">${escapeHtml(inc.summary || 'Incident')}</td>
+                <td>
+                    <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 11px;" onclick="selectIncidentFromModal('${inc.id}')">
+                        ${isCurrent ? 'Active' : 'Load'}
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join("");
+}
+
+function filterIncidentHistoryTable() {
+    const search = (document.getElementById("historySearchInput").value || "").toLowerCase().trim();
+    const severity = document.getElementById("historySeverityFilter").value;
+    const status = document.getElementById("historyStatusFilter").value;
+
+    const filtered = cachedIncidents.filter(inc => {
+        const matchSearch = !search || 
+            (inc.id && inc.id.toLowerCase().includes(search)) ||
+            (inc.service_name && inc.service_name.toLowerCase().includes(search)) ||
+            (inc.summary && inc.summary.toLowerCase().includes(search));
+        
+        const matchSev = !severity || inc.severity === severity;
+        const matchStat = !status || inc.status === status;
+
+        return matchSearch && matchSev && matchStat;
+    });
+
+    renderHistoryTable(filtered);
+}
+
+function openHistoryModal() {
+    loadIncidentHistory();
+    document.getElementById("historyModal").style.display = "flex";
+}
+
+function closeHistoryModal() {
+    document.getElementById("historyModal").style.display = "none";
+}
+
+async function selectIncidentFromModal(incidentId) {
+    closeHistoryModal();
+    try {
+        const resp = await fetch(`/incidents/${incidentId}`);
+        const data = await resp.json();
+        currentIncidentId = incidentId;
+        updateRoomView(data);
+        const select = document.getElementById("historySelect");
+        if (select) select.value = incidentId;
+    } catch (e) {
+        console.error("Error loading selected incident:", e);
+    }
+}
+
+async function switchIncidentFromHistory() {
+    const select = document.getElementById("historySelect");
+    const selectedId = select.value;
+    if (!selectedId) return;
+
+    try {
+        const resp = await fetch(`/incidents/${selectedId}`);
+        const data = await resp.json();
+        currentIncidentId = selectedId;
+        updateRoomView(data);
+    } catch (e) {
+        console.error("Error loading incident detail:", e);
     }
 }
 
@@ -82,19 +207,39 @@ function updateRoomView(data) {
     const bannerTitle = document.getElementById("bannerTitle");
     const bannerSubtitle = document.getElementById("bannerSubtitle");
     const btnApprove = document.getElementById("btnApproveAction");
+    const btnRetry = document.getElementById("btnRetryAction");
+    const btnReject = document.getElementById("btnRejectAction");
 
     if (currentWorkflowState === "AWAITING_FIX_APPROVAL") {
         banner.style.display = "flex";
         bannerTitle.innerText = "Human-in-the-Loop Approval Required (Step 1 of 2):";
-        bannerSubtitle.innerText = "Review proposed patch diff. Authorize running isolated validation tests?";
+        bannerSubtitle.innerText = "Review proposed patch diff. Authorize applying patch to disk and running isolated tests?";
+        btnApprove.style.display = "inline-block";
         btnApprove.innerText = "✅ Authorize Tests";
+        if (btnRetry) btnRetry.style.display = "none";
+        if (btnReject) btnReject.style.display = "inline-block";
     } else if (currentWorkflowState === "AWAITING_PR_APPROVAL") {
         banner.style.display = "flex";
         bannerTitle.innerText = "Human-in-the-Loop Approval Required (Step 2 of 2):";
         bannerSubtitle.innerText = "Validation tests PASSED. Authorize creating Git branch and GitHub Pull Request?";
+        btnApprove.style.display = "inline-block";
         btnApprove.innerText = "🚀 Create GitHub PR";
+        if (btnRetry) btnRetry.style.display = "none";
+        if (btnReject) btnReject.style.display = "inline-block";
+    } else if (currentWorkflowState === "TEST_FAILED") {
+        banner.style.display = "flex";
+        bannerTitle.innerText = "❌ Validation Tests Failed: Review error logs.";
+        bannerSubtitle.innerText = "Would you like to synthesize an alternative remediation patch or reject the workflow?";
+        btnApprove.style.display = "none";
+        if (btnRetry) btnRetry.style.display = "inline-block";
+        if (btnReject) btnReject.style.display = "inline-block";
     } else {
         banner.style.display = "none";
+    }
+
+    // Agent Tasks Stream
+    if (data.tasks) {
+        renderTasks(data.tasks);
     }
 
     // Telemetry stats
@@ -108,6 +253,25 @@ function updateRoomView(data) {
     if (data.messages) {
         renderMessages(data.messages);
     }
+}
+
+function renderTasks(tasks) {
+    const list = document.getElementById("agentTaskList");
+    if (!list) return;
+
+    if (!tasks || tasks.length === 0) {
+        list.innerHTML = `<div class="task-row"><span class="task-agent">[System]</span> Awaiting incident detection...</div>`;
+        return;
+    }
+
+    list.innerHTML = tasks.map(t => `
+        <div class="task-row">
+            <span class="task-agent">[${escapeHtml(t.agent_type)}]</span>
+            <span class="task-status ${t.status.toLowerCase()}">${t.status}</span>: 
+            ${escapeHtml(t.output_summary || t.input_summary)}
+            ${t.duration_seconds ? `<span class="task-dur">(${t.duration_seconds}s)</span>` : ''}
+        </div>
+    `).join("");
 }
 
 function getStatusColor(status) {
@@ -197,6 +361,31 @@ async function handleApproveClick() {
     }
 }
 
+async function handleRetryClick() {
+    if (!currentIncidentId) return;
+    const btn = document.getElementById("btnRetryAction");
+    if (btn) {
+        btn.disabled = true;
+        btn.innerText = "⏳ Synthesizing fix...";
+    }
+    try {
+        const resp = await fetch(`/incidents/${currentIncidentId}/retry`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reviewer: "OnCallEngineer" })
+        });
+        const data = await resp.json();
+        refreshState();
+    } catch (e) {
+        console.error("Retry error:", e);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = "🔄 Suggest Alternative Fix";
+        }
+    }
+}
+
 async function rejectIncident() {
     if (!currentIncidentId) return;
     try {
@@ -280,6 +469,7 @@ async function submitManualIncident(event) {
         });
         const data = await resp.json();
         updateRoomView(data);
+        loadIncidentHistory();
     } catch (e) {
         console.error("Manual intake error:", e);
     }
