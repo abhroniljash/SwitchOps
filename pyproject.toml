@@ -29,3 +29,11 @@ dev = [
 
 [project.scripts]
 switchops = "switchops.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["switchops*"]
+exclude = ["api*", "tests*", "scripts*"]
+
+[tool.setuptools.package-data]
+"switchops.web" = ["templates/*", "static/*"]
