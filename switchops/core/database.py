@@ -16,7 +16,22 @@ class Database:
     """Manages SQLite persistence for SwitchOps entities."""
 
     def __init__(self, db_path: Optional[str] = None):
-        self.db_path = db_path or os.getenv("SQLITE_DB_PATH", os.path.join(os.getcwd(), "switchops.db"))
+        if db_path:
+            self.db_path = db_path
+        elif os.getenv("SQLITE_DB_PATH"):
+            self.db_path = os.getenv("SQLITE_DB_PATH")
+        elif os.getenv("VERCEL") == "1" or os.getenv("NOW_REGION"):
+            self.db_path = "/tmp/switchops.db"
+        else:
+            self.db_path = os.path.join(os.getcwd(), "switchops.db")
+
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir and not os.path.exists(db_dir):
+            try:
+                os.makedirs(db_dir, exist_ok=True)
+            except Exception:
+                pass
+
         self._init_tables()
 
     @contextmanager
