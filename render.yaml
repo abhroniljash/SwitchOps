@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: switchops
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn switchops.web.app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4
+    plan: free
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: SQLITE_DB_PATH
+        value: /var/data/switchops.db
+    disk:
+      name: switchops-data
+      mountPath: /var/data
+      sizeGB: 1

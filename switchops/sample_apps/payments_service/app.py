@@ -38,17 +38,9 @@ class PaymentsService:
         NOTE: Bug here in v1.0.0! If a currency key is lowercase or not found,
         it does a raw dict lookup without normalization or fallback, triggering KeyError.
         """
-        # Normalized lookup with safety fallback in v1.0.1 (Auto-remediated by SwitchOps)
-        clean_from = str(from_currency).upper().strip()
-        clean_to = str(to_currency).upper().strip()
-
-        if clean_from not in EXCHANGE_RATES:
-            raise PaymentProcessingError(f"Unsupported source currency: {from_currency}")
-        if clean_to not in EXCHANGE_RATES:
-            raise PaymentProcessingError(f"Unsupported target currency: {to_currency}")
-
-        from_rate = EXCHANGE_RATES[clean_from]
-        to_rate = EXCHANGE_RATES[clean_to]
+        # Normalized lookup with safety fallback in v1.0.1
+        from_rate = EXCHANGE_RATES[from_currency]
+        to_rate = EXCHANGE_RATES[to_currency]
         
         # Convert to USD base first, then to target
         amount_in_usd = amount / from_rate

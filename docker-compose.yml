@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  switchops:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: switchops-cockpit
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - HOST=0.0.0.0
+      - SQLITE_DB_PATH=/app/data/switchops.db
+      - SWITCH_GATEWAY_URL=${SWITCH_GATEWAY_URL:-http://localhost:8000}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - DASHBOARD_API_KEY=${DASHBOARD_API_KEY}
+      - SENTRY_WEBHOOK_SECRET=${SENTRY_WEBHOOK_SECRET}
+      - SWITCH_WEBHOOK_SECRET=${SWITCH_WEBHOOK_SECRET}
+    volumes:
+      - switchops-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  switchops-data:

@@ -196,6 +196,67 @@ python -m switchops.web.app
 
 ---
 
+## 🌐 Deployment Guide
+
+### Option 1: One-Click Cloud Deployment (Render / Railway / Fly.io)
+
+SwitchOps includes pre-configured [`render.yaml`](render.yaml) and [`Procfile`](Procfile) for immediate cloud deployment:
+
+#### Deploy to Render (Recommended for Hackathon Demo URL):
+1. Push this repository to GitHub.
+2. Sign in to [Render.com](https://render.com) and click **New +** ➔ **Blueprint** (or **Web Service**).
+3. Connect your repository. Render will automatically read `render.yaml`.
+4. Add your Environment Secrets in the Render dashboard:
+   * `GEMINI_API_KEY` (or `OPENAI_API_KEY`)
+   * `GITHUB_TOKEN` (optional for live PRs)
+   * `SWITCH_GATEWAY_URL` (optional, default: embedded mode)
+5. Click **Apply Blueprint** — your app will be live at `https://switchops-xxxx.onrender.com`!
+
+#### Deploy to Railway:
+1. Connect your GitHub repository at [Railway.app](https://railway.app).
+2. Railway will automatically detect the `Procfile` and `requirements.txt`.
+3. Set `PORT=5000` and your API keys in the Variables tab.
+
+---
+
+### Option 2: Production Docker & Docker Compose (Self-Hosted / Cloud VPS)
+
+Run with Docker Compose to deploy the web cockpit with persistent SQLite storage:
+
+```bash
+# 1. Configure environment
+cp .env.example .env
+
+# 2. Build and launch with Docker Compose
+docker compose up -d --build
+
+# 3. View logs
+docker compose logs -f switchops
+```
+* The cockpit is accessible at `http://localhost:5000` (or your VPS public IP).
+* SQLite database is stored in the persistent volume `switchops-data`.
+
+---
+
+### Option 3: Local / Tunneling for Live Webhooks (ngrok / Cloudflare Tunnel)
+
+To connect live webhooks from external services (Slack, Discord, Sentry, AWS SNS) to a running local instance:
+
+```bash
+# 1. Start SwitchOps locally
+python -m switchops.web.app
+
+# 2. In another terminal, open a secure public tunnel
+ngrok http 5000
+# or: cloudflared tunnel --url http://localhost:5000
+```
+Use the generated public URL (e.g. `https://xyz.ngrok-free.app`) to configure:
+* **Switch Gateway Webhook:** `https://xyz.ngrok-free.app/integrations/switch/events`
+* **Sentry Webhook:** `https://xyz.ngrok-free.app/integrations/sentry/webhook`
+* **AWS CloudWatch SNS:** `https://xyz.ngrok-free.app/integrations/cloudwatch/webhook`
+
+---
+
 ## 🧪 Testing
 
 The repository includes a comprehensive unit and integration test suite implementing the Section 17 testing roadmap:
